@@ -31,15 +31,15 @@ class WarpFrame(gym.ObservationWrapper):
 
         image = Image.fromarray(obs)
         
-        # cropping an 84 × 84 region of the image that roughly captures the playing area
-        (left, upper, right, lower) = (0, 17, 160, 17+177)
+        # cropping an 160×180 region of the image that roughly captures the playing area
+        (left, upper, right, lower) = (0, 18, 160, 18+180)
         image = image.crop(box=(left, upper, right, lower))
 
         # converting their RGB representation to grayscale
         if self._grayscale:
             image = image.convert("L")
 
-        # down-sampling it to a 110×84 image
+        # down-sampling it to a 84×84 image
         image = image.resize(size=(self._width, self._height))
 
         frame = np.array(image)

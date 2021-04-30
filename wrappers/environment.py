@@ -3,6 +3,30 @@ import numpy as np
 from collections import deque
 
 
+class NoopResetEnv(gym.Wrapper):
+    """No-op 행동으로 무작위 초기 상태를 샘플링한다.
+    No-op는 action 0이라고 가정한다.
+    """
+    
+    def __init__(self, env, noop_max=30):
+        super(NoopResetEnv, self).__init__(env)
+        self.noop_max = noop_max
+        self.noop_action = 0
+        assert env.unwrapped.get_action_meanings()[0] == 'NOOP'
+
+    def reset(self, **kwargs):
+        """[1, noop_max] 범위에서 샘플링하여, no-op action을 반복한다."""
+        self.env.reset(**kwargs)
+        noops = np.random.randint(1, self.noop_max + 1)
+        assert noops > 0
+        obs = None
+        for _ in range(noops):
+            obs, _, done, _ = self.env.step(self.noop_action)
+            if done:
+                obs = self.env.reset(**kwargs)
+        return obs
+
+
 class EpisodicLifeEnv(gym.Wrapper):
     """Life가 줄어들 때마다 episode가 종료되고, 완전히 게임이 끝날 경우에만 reset을 한다."""
 

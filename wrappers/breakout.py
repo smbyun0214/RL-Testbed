@@ -1,4 +1,5 @@
 import gym
+from wrappers.environment import NoopResetEnv
 from wrappers.environment import EpisodicLifeEnv
 from wrappers.environment import FireResetEnv
 from wrappers.environment import SkipEnv
@@ -7,6 +8,7 @@ from wrappers.observation import WarpFrame
 
 def wrapper(env_id="Breakout-v4", skip=4, stack=4):
     env = gym.make(env_id)
+    env = NoopResetEnv(env)
     env = EpisodicLifeEnv(env)
     env = FireResetEnv(env)
     env = WarpFrame(env)
