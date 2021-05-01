@@ -6,7 +6,7 @@ from wrappers.environment import SkipEnv
 from wrappers.environment import FrameStack
 from wrappers.observation import WarpFrame
 
-def wrapper(env_id="Breakout-v4", skip=4, stack=4):
+def wrapper(env_id="BreakoutNoFrameskip-v4", skip=4, stack=4):
     env = gym.make(env_id)
     env = NoopResetEnv(env)
     env = EpisodicLifeEnv(env)
