@@ -1,6 +1,7 @@
 import tensorflow as tf
 from collections import OrderedDict
 
+
 class Logger:
     def __init__(self, log_dir):
         self.writer = tf.summary.create_file_writer(log_dir)

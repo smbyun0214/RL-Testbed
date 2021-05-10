@@ -1,180 +1,176 @@
 import argparse
-import numpy as np
-import tensorflow as tf
-
 from datetime import datetime
-from collections import deque
-
-from wrappers.breakout import wrapper
-from policies import epsilon_greedy_policy
-from logger import Logger
+from common import load_pickle
+from common import save_pickle
 
 
-parser = argparse.ArgumentParser(prog="Training")
+parser = argparse.ArgumentParser(prog="Reinforcement Learning Testbed")
 
-# name
+# setup parameters
 parser.add_argument('name', type=str, choices=['dqn', 'double_dqn'])
+parser.add_argument('solved_reward', type=int)
 
-# learning
-parser.add_argument('--minibatch_size', type=int, default=32)
-parser.add_argument('--update_frequency', type=int, default=4)
-parser.add_argument('--discount_factor', type=float, default=0.99)
-parser.add_argument('--optimizer', type=str, default="adam")
-parser.add_argument('--learning_rate', type=float, default=0.0001)
+# hyperparameters
+parser.add_argument('--seed', default=42, type=int)
+parser.add_argument('--minibatch_size', dest="batch_size", default=32, type=int)
+parser.add_argument('--replay_memory_size',dest="replay_size", default=1000000, type=int)
+parser.add_argument('--replay_start_size', dest="replay_start_size", default=50000, type=int)
+parser.add_argument('--agent_history_length', dest="stackframe", default=4, type=int)
+parser.add_argument('--action_repeat', dest="skipframe", default=4, type=int)
+parser.add_argument('--discount_factor', default=0.99, type=float)
+parser.add_argument('--update_frequency', dest="parameter_update_frequency", default=4, type=int)
+parser.add_argument('--target_network_update_frequency', dest="model_target_update_frequency", default=10000, type=int)
+parser.add_argument('--optimizer', default="adam", choices=["adam"], type=str)
+parser.add_argument('--learning_rate', default=0.00001, type=float)
+parser.add_argument('--initial_exploration', dest="epsilon", default=1.0, type=float)
+parser.add_argument('--final_exploration', dest="epsilon_min", default=0.1, type=float)
+parser.add_argument('--final_exploration_frame', dest="epsilon_frame", default=1000000.0, type=float)
 
-# epsilon
-parser.add_argument('--epsilon', type=float, default=1.0)
-parser.add_argument('--epsilon_min', type=float, default=0.1)
-parser.add_argument('--epsilon_max', type=float, default=1.0)
-parser.add_argument('--epsilon_greedy_frames', type=float, default=500000.0)
+# save & load
+parser.add_argument('--now', default=datetime.now().strftime("%Y%m%d-%H%M%S"), type=str)
+parser.add_argument('--log_dir', default="runs", type=str)
+parser.add_argument('--weights_dir', default="checkpoints", type=str)
+parser.add_argument('--load_config_file', default="", type=str)
+parser.add_argument('--save_config_file', default="", type=str)
 
-# agent
-parser.add_argument('--agent_history_length', type=int, default=4)
-parser.add_argument('--action_repeat', type=int, default=4)
-
-# experience replay
-parser.add_argument('--replay_memory_size', type=int, default=500000)
-parser.add_argument('--replay_start_size', type=int, default=50000)
-
-# update target
-parser.add_argument('--target_network_update_frequency', type=int, default=50000)
-
-# episode
-parser.add_argument('--max_frame_count', type=int, default=10000000)
-parser.add_argument('--now', type=str, default=datetime.now().strftime("%Y%m%d-%H%M%S"))
-parser.add_argument('--save_log_dir', dest='log_dir', type=str, default="runs")
-parser.add_argument('--save_weights_dir', dest='weights_dir', type=str, default="checkpoints")
-
+# setup config
 config = parser.parse_args()
 
-frame_count = 0
-episode_count = 0
-config.epsilon_interval = config.epsilon_max - config.epsilon_min
-config.log_dir += "/{}-{}".format(config.name, config.now)
-config.weights_dir += "/{}-{}".format(config.name, config.now)
+time_tmpl ="%Y%m%d-%H%M%S" 
+log_dir_tmpl = "{}/{}-{}".format(config.log_dir, config.name, {})
+weights_dir_tmpl = "{}/{}-{}".format(config.weights_dir, config.name, {})
+now = datetime.now().strftime(time_tmpl)
 
+# load config
+if config.load_config_file:
+    config = load_pickle(config.load_config_file)
+    assert config.lastest_weights_file
+    assert config.update_count
 
-# Environment
-env = wrapper(
-    skip=config.action_repeat,
-    stack=config.agent_history_length)
-num_actions = env.action_space.n
+# importer
+import numpy as np
+import tensorflow as tf
+from collections import deque
+from wrappers.pong import wrapper
+from policies import epsilon_greedy_policy
+from agent import Agent
+from experience_replay import ExperienceReplay
+from logger import Logger
 
-# Agent history
-state_history       = deque(maxlen=config.replay_memory_size)
-action_history      = deque(maxlen=config.replay_memory_size)
-rewards_history     = deque(maxlen=config.replay_memory_size)
-state_next_history  = deque(maxlen=config.replay_memory_size)
-done_history        = deque(maxlen=config.replay_memory_size)
-
-# Model
-assert config.name in ("dqn", "double_dqn")
+if config.name in ("dqn", "double_dqn"):
+    from models import create_dqn_model as create_model
 if config.name == "dqn":
     from algorithms import dqn as train
-    from models import create_dqn_model as create_model
 elif config.name == "double_dqn":
     from algorithms import double_dqn as train
-    from models import create_dqn_model as create_model
-    
-model               = create_model(num_actions)
-model_target        = create_model(num_actions)
-model_target.set_weights(model.get_weights())
 
-# optimizer
-assert config.optimizer == "adam"
-if config.optimizer == "adam":
-    optimizer = tf.keras.optimizers.Adam(learning_rate=config.learning_rate)
+# environment
+env = wrapper(skip=config.skipframe, stack=config.stackframe)
+num_actions = env.action_space.n
 
+# set random seed
+np.random.seed(42)
+tf.random.set_seed(42)
+env.seed(config.seed)
 
-# Loger
-logger = Logger(config.log_dir)
+# model
+model = create_model(num_actions)
+if config.load_config_file:
+    model = model.load_weights(config.lastest_weights_file)
+
+# agent
+agent = Agent(
+    model,
+    num_actions,
+    epsilon_greedy_policy,
+    train,
+    epsilon_init=config.epsilon,
+    epsilon_fin=config.epsilon_min,
+    epsilon_fin_frame=config.epsilon_frame,
+    learning_rate=config.learning_rate
+)
+
+# experience replay
+buffer = ExperienceReplay(memory_size=config.replay_size, batch_size=config.batch_size)
+
+# logger
+logger = tf.summary.create_file_writer(log_dir_tmpl.format(now))
 is_gpu = tf.config.list_physical_devices('GPU')
 
-metric_rewards  = logger.add_metric("Sum. Rewards", "sum", "Sum/Rewards")
-metric_loss     = logger.add_metric("Avg. Loss", "mean", "Average/Loss")
-metric_q_values = logger.add_metric("Avg. Q-value", "mean", "Average/Q-Values")
+# metrics
+metric_q = tf.keras.metrics.Mean("Avg. Q-value", dtype=tf.float32)
+metric_loss = tf.keras.metrics.Mean("Avg. Loss", dtype=tf.float32)
+metric_rewards = tf.keras.metrics.Sum("Sum. Rewards", dtype=tf.float32)
 
 
-# 에피소드 메인 loop
+# main
+all_rewards = deque([], maxlen=100)
+
+if config.load_config_file:
+    update_count = config.update_count
+else:
+    update_count = 0
+
 frame_count = 0
-episode_count = 0
-update_frequency_count = 0
-epsilon = config.epsilon_max
 
-while frame_count < config.max_frame_count:    
-    # 환경 초기화
+while True:    
     done = False
     state = env.reset()
 
-    # 게임 시작 loop
     while done is False:
-        # experience memory에 충분한 경험이 쌓일 때까지 무작위 행동 선택
         if frame_count < config.replay_start_size:
-            action = epsilon_greedy_policy(model, state, 1)
-        # 충분한 경험이 쌓였을 경우, epsilon greedy로 행동 선택
+            action = agent.get_action(state, 1.0)
         else:
-            action = epsilon_greedy_policy(model, state, epsilon)
-            epsilon -= config.epsilon_interval / config.epsilon_greedy_frames
-            epsilon = max(epsilon, config.epsilon_min)
+            action = agent.get_action(state)
 
-        # 선택한 행동에 대한 environment의 응답
         state_next, reward, done, info = env.step(action)
+        buffer.put(state, [action], state_next, [reward], [done])
 
-        # observable 저장
-        state_history.append(state)
-        action_history.append(action)
-        rewards_history.append(reward)
-        state_next_history.append(state_next)
-        done_history.append([ 1 if done else 0])
-
-        # experience memory에 충분한 경험이 쌓일 때 학습 진행
-        if len(done_history) > config.replay_start_size:
-            # minibatch_size 만큼 sample을 생성하여 학습을 진행한다.
-            # update_frequency 반복한다.
-            for _ in range(config.update_frequency):
-                indices = np.random.choice(range(len(done_history)), size=config.minibatch_size)
-
-                state_sample        = np.stack([state_history[i]        for i in indices])
-                action_sample       = np.stack([action_history[i]       for i in indices])
-                rewards_sample      = np.stack([rewards_history[i]      for i in indices])
-                state_next_sample   = np.stack([state_next_history[i]   for i in indices])
-                done_sample         = np.stack([done_history[i]         for i in indices])
-
-                loss, q_max = train(
-                    model,
-                    model_target,
-                    optimizer,
-                    config.discount_factor,
-                    num_actions,
-                    state_sample, action_sample, rewards_sample, state_next_sample, done_sample)
-
-                update_frequency_count += 1
+        if buffer.get_history_length() >= config.replay_start_size:
+            for _ in range(config.parameter_update_frequency):
+                state_sample, action_sample, state_next_sample, rewards_sample, done_sample = buffer.get()
+                loss, q_max = agent.train(state_sample, action_sample, state_next_sample, rewards_sample, done_sample)
                 metric_loss(loss)
-                metric_q_values(q_max)
-                
-            # target model을 업데이트하면서, 저장한다.
-            if update_frequency_count % config.target_network_update_frequency == 0:
-                model_target.set_weights(model.get_weights())
-                model.save_weights(config.weights_dir)
+                metric_q(q_max)
+                update_count += 1
 
-        # 게임 점수를 더한다.
+                with logger.as_default():
+                    tf.summary.scalar("Performance/Q-value", metric_q.result(), step=update_count)
+                    tf.summary.scalar("Performance/Loss", metric_loss.result(), step=update_count)
+                    if is_gpu:
+                        tf.summary.scalar(
+                            "Etc./GPU usages",
+                            tf.config.experimental.get_memory_usage("GPU:0"),
+                            step=update_count
+                        )
+            
+                if update_count % config.model_target_update_frequency == 0:
+                    agent.update_model_target()
+                    agent.save_model(weights_dir_tmpl.format(now))
+
+                    if config.save_config_file:
+                        config.update_count = update_count
+                        config.epsilon = agent.epsilon
+                        config.replay_start_size = buffer.get_history_length()
+                        save_pickle(config.save_config_file, config)
+
         metric_rewards(reward)
-
-        # 에피소드가 끝나지 않을 경우, 다음 진행
         state = state_next
         frame_count += 1
 
-    # 로그를 기록하고 출력한다.
-    episode_count += 1
-    print("Episode: {} | Loss: {:.4f} | Q-value: {:.4f} | Rewards: {} | epsilon: {:.4f} | memory size: {:}".format(
-        episode_count, metric_loss.result(), metric_q_values.result(), metric_rewards.result(), epsilon, len(done_history))
+    with logger.as_default():
+        tf.summary.scalar("Performance/Rewards", metric_rewards.result(), step=update_count)
+        tf.summary.scalar("Etc./Epsilon", agent.epsilon, step=update_count)
+
+    print("{} | Loss: {:.4f} | Q-value: {:.4f} | Rewards: {:4f} | epsilon: {:.4f} | memory size: {:}".format(
+        update_count, metric_loss.result(), metric_q.result(), metric_rewards.result(), agent.epsilon, buffer.get_history_length())
     )
-    logger.write_metrics(episode_count)
-    logger.write_scalar(epsilon, "Etc./Epsilon", episode_count)
-    if is_gpu:
-        logger.write_scalar(
-            tf.config.experimental.get_memory_usage("GPU:0"),
-            "Etc./GPU usages",
-            episode_count
-        )
-    logger.reset_metrics()
+
+    all_rewards.append(metric_rewards.result())
+    if np.mean(all_rewards) >= config.solved_reward:
+        agent.save_model(weights_dir_tmpl.format("done"))
+        break
+
+    metric_q.reset_states()
+    metric_loss.reset_states()
+    metric_rewards.reset_states()
