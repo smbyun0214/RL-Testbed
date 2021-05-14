@@ -79,9 +79,9 @@ class FireResetEnv(gym.Wrapper):
 class SkipEnv(gym.Wrapper):
     """`skip`번째 frame을 반환한다."""
     
-    def __init__(self, env, skip=4):
+    def __init__(self, env, skipframe=4):
         super(SkipEnv, self).__init__(env)
-        self._skip       = skip
+        self._skip = skipframe
 
     def step(self, action):
         """action을 `skip`번 반복하면서 reward를 더한다.
@@ -99,13 +99,13 @@ class SkipEnv(gym.Wrapper):
 class FrameStack(gym.Wrapper):
     """가장 최근 k개의 frame을 쌓는다."""
 
-    def __init__(self, env, k):
+    def __init__(self, env, stackframe):
         super(FrameStack, self).__init__(env)
-        self.k = k
-        self.frames = deque([], maxlen=k)
+        self.k = stackframe
+        self.frames = deque([], maxlen=stackframe)
 
         shp = env.observation_space.shape
-        shape = (shp[:-1] + (shp[-1]*k,))  # (84, 84, k) = (84, 84) + (1*k, )
+        shape = (shp[:-1] + (shp[-1]*stackframe,))  # (84, 84, k) = (84, 84) + (1*k, )
         self._shape = shape
         self.observation_space = gym.spaces.Box(
             low=0,

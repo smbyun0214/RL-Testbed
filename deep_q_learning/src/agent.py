@@ -1,5 +1,4 @@
 from tensorflow.keras.models import clone_model
-from tensorflow.keras.optimizers import Adam
 
 
 class Agent(object):
@@ -8,10 +7,10 @@ class Agent(object):
         num_actions,
         behavior_policy,
         train,
+        optimizer,
         epsilon_init=1.0,
         epsilon_fin=0.1,
         epsilon_fin_frame=float(1e+6),
-        learning_rate=float(1e-5),
         ):
         self._model = model
         self._model_target = clone_model(model)
@@ -27,7 +26,7 @@ class Agent(object):
         self._epsilon_fin_frame = epsilon_fin_frame
         self._epsilon_interval = epsilon_init - epsilon_fin
 
-        self._optimizer = Adam(learning_rate)
+        self._optimizer = optimizer
 
     def get_action(self, state, epsilon=None):
         if epsilon is None:

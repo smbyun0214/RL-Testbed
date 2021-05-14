@@ -27,8 +27,6 @@ class WarpFrame(gym.ObservationWrapper):
         )
 
     def observation(self, obs):
-        frame = obs
-
         image = Image.fromarray(obs)
         
         # cropping an 160×180 region of the image that roughly captures the playing area
@@ -48,3 +46,18 @@ class WarpFrame(gym.ObservationWrapper):
 
         obs = frame
         return obs
+
+    
+class FlickerFrame(gym.ObservationWrapper):
+    """p확률로 빈 화면으로 처리한다."""
+
+    def __init__(self, env, probability=0.5):
+        super(FlickerFrame, self).__init__(env)
+        self._p = probability
+        self._shape = self.observation_space.shape
+
+    def observation(self, obs):
+        if np.random.sample() < self._p:
+            return np.zeros(self._shape)
+        else:
+            return obs
