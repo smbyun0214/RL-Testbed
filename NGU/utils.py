@@ -31,3 +31,20 @@ class MovingAverage():
             return self.mean, tf.math.sqrt(self.M2/self.count)
         
         return self.mean + self.eps, tf.zeros_like(value, dtype=tf.float32) + self.eps
+
+
+def calcuate_beta(i, N, beta=0.3):
+    if i == 0:
+        return 0.0
+    elif i == N - 1:
+        return beta
+
+    return beta * tf.nn.sigmoid(
+                            10 * (2 * i - (N - 2)) /
+                            (N - 2))
+    
+
+def calcuate_discount_factor(i, N, min_discount_factor=0.99, max_discount_factor=0.997):
+    return 1 - tf.math.exp(
+                        (N - 1 - i) * tf.math.log(1 - max_discount_factor) + i * tf.math.log(1 - min_discount_factor) /
+                        (N - 1))
