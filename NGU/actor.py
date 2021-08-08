@@ -4,6 +4,8 @@ from collections import deque
 from models import R2D2
 from novelty import Episodic, LifeLong
 from utils import calcuate_beta, calcuate_discount_factor
+from ext_typing import Transition
+from typing import List
 
 
 class Actor:
@@ -19,6 +21,7 @@ class Actor:
         self.behavior_policy = behavior_policy
         self.life_long = life_long
         self.episodic = Episodic(num_of_actions)
+        self.optimizer = tf.keras.optimizers.Adam()
 
     def reset(self):
         self.episodic.reset()
@@ -28,12 +31,11 @@ class Actor:
         return action, hidden_state
     
     def get_intrinsic_reward(self, observations, next_observations):
-        episodic_reward = self.episodic(observations, next_observations)
-        modulator = self.life_long(observations)
+        episodic_reward = self.episodic.get_similarity(observations, next_observations)
+        modulator = self.life_long.get_modulator(observations)
         intrinsic_reward = episodic_reward * tf.math.minimum(tf.math.maximum(modulator, 1), self.maximum_reward_scaling)
         return intrinsic_reward
 
-    def train(self, observations):
-        with tf.gradientTape() as tape:
-            modulator = self.life_long(observations)
-        tape.gradient(modulator, self.life_long.trainable_variables)
+    def train(self, batch_transitions: List[Transition]):
+        self.episodic.train(batch_transitions)
+        self.life_long.train(batch_transitions)
